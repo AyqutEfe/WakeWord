@@ -97,7 +97,7 @@ class _MicButtonState extends State<MicButton>
                             : widget.isProcessing
                                 ? Colors.orange
                                 : Colors.blue)
-                        .withOpacity(0.3),
+                        .withValues(alpha: 0.3),
                     blurRadius: widget.isListening ? 20 : 10,
                     spreadRadius: widget.isListening ? 5 : 2,
                   ),

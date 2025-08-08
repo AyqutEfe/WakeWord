@@ -41,16 +41,11 @@ Cross-platform Flutter uygulaması ile wake word algılama, ses tanıma, çeviri
    flutter pub get
    ```
 
-3. **Porcupine Access Key alın:**
-   - [Picovoice Console](https://console.picovoice.ai/) adresine gidin
-   - Ücretsiz hesap oluşturun
-   - Access key alın
-   - `lib/services/translation_service.dart` dosyasında `YOUR_PICOVOICE_ACCESS_KEY` yerine kendi key'inizi yazın
-
-4. **Wake Word modelini indirin:**
-   - Picovoice Console'da "hey translator" wake word'ü oluşturun
-   - Modeli indirin ve `assets/audio/hey_translator_ppn.ppn` olarak kaydedin
-   - Porcupine modelini `assets/audio/porcupine_params.pv` olarak kaydedin
+3. **Porcupine Wake Word Kurulumu:**
+   - Detaylı kurulum rehberi için `PORCUPINE_SETUP.md` dosyasını inceleyin
+   - [Picovoice Console](https://console.picovoice.ai/) adresinden ücretsiz hesap oluşturun
+   - Access key alın ve `lib/services/translation_service.dart` dosyasında ayarlayın
+   - Wake word ve Porcupine model dosyalarını `assets/audio/` klasörüne yerleştirin
 
 5. **Uygulamayı çalıştırın:**
    ```bash
@@ -59,9 +54,17 @@ Cross-platform Flutter uygulaması ile wake word algılama, ses tanıma, çeviri
 
 ## 📱 Kullanım
 
+### Wake Word Modu (Porcupine Aktif)
 1. **Uygulamayı açın** ve gerekli izinleri verin
 2. **Dil seçimi yapın** (varsayılan: İngilizce → Türkçe)
-3. **Mikrofon butonuna basın** veya "hey translator" diyerek wake word'ü tetikleyin
+3. **"hey translator" diyerek wake word'ü tetikleyin**
+4. **Konuşun** - uygulama otomatik olarak sesinizi algılayacak
+5. **Çeviriyi dinleyin** - sonuç otomatik olarak seslendirilecek
+
+### Manuel Mod (Porcupine Devre Dışı)
+1. **Uygulamayı açın** ve gerekli izinleri verin
+2. **Dil seçimi yapın** (varsayılan: İngilizce → Türkçe)
+3. **Mikrofon butonuna basın**
 4. **Konuşun** - uygulama otomatik olarak sesinizi algılayacak
 5. **Çeviriyi dinleyin** - sonuç otomatik olarak seslendirilecek
 
@@ -111,6 +114,8 @@ lib/
 - Mikrofon izinlerini kontrol edin
 - Picovoice Access Key'in doğru olduğundan emin olun
 - Wake word modelinin doğru konumda olduğunu kontrol edin
+- Konsol çıktısında Porcupine durumunu kontrol edin
+- Detaylı kurulum için `PORCUPINE_SETUP.md` dosyasını inceleyin
 
 ### Çeviri Çalışmıyor
 - İnternet bağlantısını kontrol edin

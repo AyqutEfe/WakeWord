@@ -30,10 +30,10 @@ class LanguageSelector extends StatelessWidget {
                 child: IconButton(
                   onPressed: service.switchLanguages,
                   icon: const Icon(Icons.swap_horiz),
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.blue.withOpacity(0.2),
-                    foregroundColor: Colors.blue,
-                  ),
+                            style: IconButton.styleFrom(
+            backgroundColor: Colors.blue.withValues(alpha: 0.2),
+            foregroundColor: Colors.blue,
+          ),
                 ),
               ),
               
@@ -66,9 +66,9 @@ class LanguageSelector extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Column(
           children: [

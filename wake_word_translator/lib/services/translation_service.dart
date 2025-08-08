@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:porcupine_flutter/porcupine.dart';
 import 'package:porcupine_flutter/porcupine_manager.dart';
+import 'package:porcupine_flutter/porcupine_error.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:translator/translator.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -39,6 +43,11 @@ class TranslationService extends ChangeNotifier {
   // Language settings
   String _sourceLanguage = 'en';
   String _targetLanguage = 'tr';
+  
+  // Porcupine configuration
+  static String get _accessKey => dotenv.env['PICOVOICE_ACCESS_KEY'] ?? '';
+  static const String _wakeWordPath = 'assets/audio/hey-translator_en_android_v3_0_0.ppn';
+  static const String _modelPath = 'assets/audio/porcupine_params.pv';
   
   // Getters
   AppState get currentState => _currentState;
@@ -98,20 +107,41 @@ class TranslationService extends ChangeNotifier {
   
   Future<void> _initializePorcupine() async {
     try {
-      // Porcupine başlatma işlemi şimdilik devre dışı
-      // Gerçek uygulamada Picovoice Console'dan access key alınmalı
-      debugPrint('Porcupine başlatma işlemi devre dışı - manuel mod aktif');
+      // Access key kontrolü
+      if (_accessKey.isEmpty || _accessKey == 'YOUR_PICOVOICE_ACCESS_KEY') {
+        debugPrint('⚠️ Picovoice Access Key ayarlanmamış! Manuel mod aktif.');
+        debugPrint('📝 Access Key almak için: https://console.picovoice.ai/');
+        debugPrint('📝 .env dosyasına PICOVOICE_ACCESS_KEY=your_key_here ekleyin');
+        return;
+      }
+      
+      // Dosya varlığını kontrol et (assets için bu kontrol gerekli değil, ancak bırakıyorum)
+      debugPrint('🔄 Porcupine başlatılıyor...');
+      
+      // Güncel API kullanımı
+      _porcupineManager = await PorcupineManager.fromKeywordPaths(
+        _accessKey,
+        [_wakeWordPath], // keyword paths
+        _onWakeWordDetected, // wakeWordCallback
+        modelPath: _modelPath,
+        errorCallback: _onPorcupineError,
+      );
+      
+      debugPrint('✅ Porcupine başarıyla başlatıldı');
+      debugPrint('🎯 Wake word dinlemeye hazır: "hey translator"');
     } catch (e) {
-      debugPrint('Porcupine başlatılamadı: $e');
+      debugPrint('❌ Porcupine başlatılamadı: $e');
+      debugPrint('📝 Manuel mod aktif - mikrofon butonuna basarak kullanabilirsiniz');
     }
   }
   
   void _onWakeWordDetected(int keywordIndex) {
-    debugPrint('Wake word algılandı!');
+    debugPrint('🎯 Wake word algılandı! (Keyword Index: $keywordIndex)');
     _startSpeechRecognition();
   }
   
-  void _onPorcupineError(dynamic error) {
+  void _onPorcupineError(PorcupineException error) {
+    debugPrint('❌ Porcupine hatası: $error');
     _setError('Wake word hatası: $error');
   }
   
@@ -120,11 +150,13 @@ class TranslationService extends ChangeNotifier {
     
     try {
       if (_porcupineManager != null) {
-        // await _porcupineManager.start();
+        await _porcupineManager!.start();
         _isWakeWordListening = true;
         _setState(AppState.listeningForWakeWord);
+        debugPrint('🎧 Wake word dinleme başlatıldı');
       } else {
         // Manuel mod - direkt ses tanımaya başla
+        debugPrint('🎤 Manuel mod - direkt ses tanıma başlatılıyor');
         _startSpeechRecognition();
       }
     } catch (e) {
@@ -134,13 +166,15 @@ class TranslationService extends ChangeNotifier {
   
   Future<void> stopListening() async {
     try {
-      if (_isWakeWordListening) {
-        // await _porcupineManager?.stop();
+      if (_isWakeWordListening && _porcupineManager != null) {
+        await _porcupineManager!.stop();
         _isWakeWordListening = false;
+        debugPrint('🛑 Wake word dinleme durduruldu');
       }
       
       if (_speechToText.isListening) {
         await _speechToText.stop();
+        debugPrint('🛑 Konuşma tanıma durduruldu');
       }
       
       _setState(AppState.idle);
@@ -263,7 +297,8 @@ class TranslationService extends ChangeNotifier {
   
   @override
   void dispose() {
-    // _porcupineManager?.dispose();
+    // PorcupineManager'ın delete metodu var, dispose değil
+    _porcupineManager?.delete();
     super.dispose();
   }
-} 
+}

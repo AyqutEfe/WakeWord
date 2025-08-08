@@ -2,8 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/translation_service.dart';
 import 'screens/home_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  try {
+    await dotenv.load();
+    print('✅ .env dosyası başarıyla yüklendi');
+  } catch (e) {
+    print('❌ .env dosyası yüklenemedi: $e');
+    print('📝 .env dosyasının proje kök dizininde olduğundan emin olun');
+  }
+  
   runApp(const MyApp());
 }
 
