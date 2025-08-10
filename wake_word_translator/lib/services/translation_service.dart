@@ -1,10 +1,5 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:porcupine_flutter/porcupine.dart';
-import 'package:porcupine_flutter/porcupine_manager.dart';
-import 'package:porcupine_flutter/porcupine_error.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:translator/translator.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -20,10 +15,6 @@ enum AppState {
 }
 
 class TranslationService extends ChangeNotifier {
-  // Porcupine wake word detection
-  PorcupineManager? _porcupineManager;
-  bool _isWakeWordListening = false;
-  
   // Speech recognition
   final SpeechToText _speechToText = SpeechToText();
   bool _speechEnabled = false;
@@ -44,11 +35,6 @@ class TranslationService extends ChangeNotifier {
   String _sourceLanguage = 'en';
   String _targetLanguage = 'tr';
   
-  // Porcupine configuration
-  static String get _accessKey => dotenv.env['PICOVOICE_ACCESS_KEY'] ?? '';
-  static const String _wakeWordPath = 'assets/audio/hey-translator_en_android_v3_0_0.ppn';
-  static const String _modelPath = 'assets/audio/porcupine_params.pv';
-  
   // Getters
   AppState get currentState => _currentState;
   String get originalText => _originalText;
@@ -56,7 +42,6 @@ class TranslationService extends ChangeNotifier {
   String get errorMessage => _errorMessage;
   String get sourceLanguage => _sourceLanguage;
   String get targetLanguage => _targetLanguage;
-  bool get isWakeWordListening => _isWakeWordListening;
   bool get speechEnabled => _speechEnabled;
   
   TranslationService() {
@@ -65,8 +50,12 @@ class TranslationService extends ChangeNotifier {
   
   Future<void> _initializeServices() async {
     try {
-      // Request permissions
-      await _requestPermissions();
+      // Request microphone permission
+      final status = await Permission.microphone.request();
+      if (status != PermissionStatus.granted) {
+        _setError('Mikrofon izni gerekli');
+        return;
+      }
       
       // Initialize speech recognition
       _speechEnabled = await _speechToText.initialize(
@@ -74,151 +63,105 @@ class TranslationService extends ChangeNotifier {
         onStatus: (status) => _handleSpeechStatus(status),
       );
       
+      if (!_speechEnabled) {
+        _setError('Konuşma tanıma başlatılamadı');
+        return;
+      }
+      
       // Initialize TTS
       await _flutterTts.setLanguage(_targetLanguage);
       await _flutterTts.setSpeechRate(0.5);
       await _flutterTts.setVolume(1.0);
       await _flutterTts.setPitch(1.0);
       
-      // Initialize Porcupine
-      await _initializePorcupine();
+      // TTS completion callback
+      _flutterTts.setCompletionHandler(() {
+        if (_currentState == AppState.speaking) {
+          _setState(AppState.idle);
+        }
+      });
       
       _setState(AppState.idle);
+      debugPrint('✅ Translation Service başarıyla başlatıldı');
     } catch (e) {
       _setError('Servis başlatma hatası: $e');
     }
   }
   
-  Future<void> _requestPermissions() async {
-    // Request microphone permission
-    final microphoneStatus = await Permission.microphone.request();
-    if (microphoneStatus != PermissionStatus.granted) {
-      throw Exception('Mikrofon izni gerekli');
-    }
-    
-    // Request speech recognition permission on iOS
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      final speechStatus = await Permission.speech.request();
-      if (speechStatus != PermissionStatus.granted) {
-        throw Exception('Konuşma tanıma izni gerekli');
-      }
-    }
-  }
-  
-  Future<void> _initializePorcupine() async {
-    try {
-      // Access key kontrolü
-      if (_accessKey.isEmpty || _accessKey == 'YOUR_PICOVOICE_ACCESS_KEY') {
-        debugPrint('⚠️ Picovoice Access Key ayarlanmamış! Manuel mod aktif.');
-        debugPrint('📝 Access Key almak için: https://console.picovoice.ai/');
-        debugPrint('📝 .env dosyasına PICOVOICE_ACCESS_KEY=your_key_here ekleyin');
-        return;
-      }
-      
-      // Dosya varlığını kontrol et (assets için bu kontrol gerekli değil, ancak bırakıyorum)
-      debugPrint('🔄 Porcupine başlatılıyor...');
-      
-      // Güncel API kullanımı
-      _porcupineManager = await PorcupineManager.fromKeywordPaths(
-        _accessKey,
-        [_wakeWordPath], // keyword paths
-        _onWakeWordDetected, // wakeWordCallback
-        modelPath: _modelPath,
-        errorCallback: _onPorcupineError,
-      );
-      
-      debugPrint('✅ Porcupine başarıyla başlatıldı');
-      debugPrint('🎯 Wake word dinlemeye hazır: "hey translator"');
-    } catch (e) {
-      debugPrint('❌ Porcupine başlatılamadı: $e');
-      debugPrint('📝 Manuel mod aktif - mikrofon butonuna basarak kullanabilirsiniz');
-    }
-  }
-  
-  void _onWakeWordDetected(int keywordIndex) {
-    debugPrint('🎯 Wake word algılandı! (Keyword Index: $keywordIndex)');
-    _startSpeechRecognition();
-  }
-  
-  void _onPorcupineError(PorcupineException error) {
-    debugPrint('❌ Porcupine hatası: $error');
-    _setError('Wake word hatası: $error');
-  }
-  
   Future<void> startListening() async {
-    if (_currentState != AppState.idle) return;
-    
-    try {
-      if (_porcupineManager != null) {
-        await _porcupineManager!.start();
-        _isWakeWordListening = true;
-        _setState(AppState.listeningForWakeWord);
-        debugPrint('🎧 Wake word dinleme başlatıldı');
-      } else {
-        // Manuel mod - direkt ses tanımaya başla
-        debugPrint('🎤 Manuel mod - direkt ses tanıma başlatılıyor');
-        _startSpeechRecognition();
+    if (_currentState != AppState.idle || !_speechEnabled) {
+      if (!_speechEnabled) {
+        _setError('Konuşma tanıma etkin değil');
       }
-    } catch (e) {
-      _setError('Dinleme başlatma hatası: $e');
-    }
-  }
-  
-  Future<void> stopListening() async {
-    try {
-      if (_isWakeWordListening && _porcupineManager != null) {
-        await _porcupineManager!.stop();
-        _isWakeWordListening = false;
-        debugPrint('🛑 Wake word dinleme durduruldu');
-      }
-      
-      if (_speechToText.isListening) {
-        await _speechToText.stop();
-        debugPrint('🛑 Konuşma tanıma durduruldu');
-      }
-      
-      _setState(AppState.idle);
-    } catch (e) {
-      _setError('Dinleme durdurma hatası: $e');
-    }
-  }
-  
-  Future<void> _startSpeechRecognition() async {
-    if (!_speechEnabled) {
-      _setError('Konuşma tanıma etkin değil');
       return;
     }
     
     try {
       _setState(AppState.listeningForSpeech);
+      _originalText = '';
+      _translatedText = '';
+      
+      debugPrint('🎤 Konuşma tanıma başlatılıyor...');
       
       await _speechToText.listen(
         onResult: _onSpeechResult,
         listenFor: const Duration(seconds: 10),
-        pauseFor: const Duration(seconds: 3),
+        pauseFor: const Duration(seconds: 2),
         localeId: _sourceLanguage,
+        partialResults: true,
+        listenMode: ListenMode.confirmation,
       );
+      
     } catch (e) {
-      _setError('Konuşma tanıma hatası: $e');
+      _setError('Konuşma tanıma başlatma hatası: $e');
+    }
+  }
+  
+  Future<void> stopListening() async {
+    try {
+      if (_speechToText.isListening) {
+        await _speechToText.stop();
+        debugPrint('🛑 Konuşma tanıma durduruldu');
+      }
+      
+      if (_currentState == AppState.listeningForSpeech) {
+        _setState(AppState.idle);
+      }
+    } catch (e) {
+      _setError('Dinleme durdurma hatası: $e');
     }
   }
   
   void _onSpeechResult(dynamic result) {
-    if (result.finalResult) {
+    debugPrint('🎯 Konuşma sonucu: ${result.recognizedWords}');
+    
+    if (result.recognizedWords.isNotEmpty) {
       _originalText = result.recognizedWords;
-      _translateText(_originalText);
+      notifyListeners();
+      
+      // Final result geldiğinde çeviri yap
+      if (result.finalResult) {
+        debugPrint('✅ Final sonuç: $_originalText');
+        _translateText(_originalText);
+      }
     }
   }
   
   void _handleSpeechError(dynamic error) {
+    debugPrint('❌ Konuşma hatası: ${error.errorMsg}');
     _setError('Konuşma tanıma hatası: ${error.errorMsg}');
   }
   
   void _handleSpeechStatus(String status) {
-    debugPrint('Konuşma durumu: $status');
+    debugPrint('📊 Konuşma durumu: $status');
+    
     if (status == 'done' || status == 'notListening') {
-      if (_currentState == AppState.listeningForSpeech && _originalText.isEmpty) {
-        _setState(AppState.idle);
+      if (_currentState == AppState.listeningForSpeech) {
+        if (_originalText.isEmpty) {
+          _setError('Hiçbir konuşma algılanmadı');
+        } else {
+          _setState(AppState.idle);
+        }
       }
     }
   }
@@ -228,6 +171,7 @@ class TranslationService extends ChangeNotifier {
     
     try {
       _setState(AppState.translating);
+      debugPrint('🔄 Çeviri başlatılıyor: $text');
       
       final translation = await translator.translate(
         text,
@@ -236,26 +180,48 @@ class TranslationService extends ChangeNotifier {
       );
       
       _translatedText = translation.text;
-      _speakTranslatedText(_translatedText);
+      debugPrint('✅ Çeviri tamamlandı: $_translatedText');
+      notifyListeners();
+      
+      // Çeviriyi seslendir
+      await _speakTranslatedText(_translatedText);
+      
     } catch (e) {
+      debugPrint('❌ Çeviri hatası: $e');
       _setError('Çeviri hatası: $e');
     }
   }
   
   Future<void> _speakTranslatedText(String text) async {
+    if (text.isEmpty) return;
+    
     try {
       _setState(AppState.speaking);
+      debugPrint('🔊 TTS başlatılıyor: $text');
       
-      await _flutterTts.speak(text);
+      // Dili ayarla
+      await _flutterTts.setLanguage(_targetLanguage);
       
-      // Konuşma bittikten sonra idle durumuna geç
-      Timer(const Duration(seconds: 2), () {
-        if (_currentState == AppState.speaking) {
-          _setState(AppState.idle);
-        }
-      });
+      // Metni seslendir
+      final result = await _flutterTts.speak(text);
+      
+      if (result == 1) {
+        debugPrint('✅ TTS başarıyla başlatıldı');
+      } else {
+        debugPrint('❌ TTS başlatılamadı');
+        _setState(AppState.idle);
+      }
+      
     } catch (e) {
+      debugPrint('❌ TTS hatası: $e');
       _setError('TTS hatası: $e');
+    }
+  }
+  
+  // Manual TTS for translation replay
+  Future<void> speakTranslation() async {
+    if (_translatedText.isNotEmpty && _currentState == AppState.idle) {
+      await _speakTranslatedText(_translatedText);
     }
   }
   
@@ -263,17 +229,24 @@ class TranslationService extends ChangeNotifier {
     final temp = _sourceLanguage;
     _sourceLanguage = _targetLanguage;
     _targetLanguage = temp;
+    
+    // TTS dilini güncelle
+    _flutterTts.setLanguage(_targetLanguage);
+    
+    debugPrint('🔄 Diller değiştirildi: $_sourceLanguage → $_targetLanguage');
     notifyListeners();
   }
   
   void setSourceLanguage(String language) {
     _sourceLanguage = language;
+    debugPrint('📝 Kaynak dil: $language');
     notifyListeners();
   }
   
   Future<void> setTargetLanguage(String language) async {
     _targetLanguage = language;
     await _flutterTts.setLanguage(language);
+    debugPrint('📝 Hedef dil: $language');
     notifyListeners();
   }
   
@@ -293,12 +266,5 @@ class TranslationService extends ChangeNotifier {
     if (_currentState == AppState.error) {
       _setState(AppState.idle);
     }
-  }
-  
-  @override
-  void dispose() {
-    // PorcupineManager'ın delete metodu var, dispose değil
-    _porcupineManager?.delete();
-    super.dispose();
   }
 }
